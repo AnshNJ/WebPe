@@ -1,70 +1,106 @@
-# Server
+# webPe - A UPI Ecosystem Replica
 
 > **Note**
 > This project is a work in progress. Functionality may be incomplete or subject to change.
 
-## About
+## About The Project
 
-This is the backend server for the webPe application. The primary goal of this project is to replicate the core functionalities of a Unified Payments Interface (UPI) ecosystem. The server is a Node.js application built with Express and TypeScript, and it uses Prisma as the ORM to interact with a PostgreSQL database.
+webPe is a full-stack application that aims to replicate the core functionalities of a Unified Payments Interface (UPI) ecosystem. It consists of a frontend client and a backend server, working together to simulate digital payment transactions.
 
-## Tech Stack
+---
 
-- **Runtime**: [Node.js](https://nodejs.org/)
-- **Framework**: [Express.js](https://expressjs.com/)
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
-- **ORM**: [Prisma](https://www.prisma.io/)
-- **Database**: [PostgreSQL](https://www.postgresql.org/)
-- **Authentication**: [bcryptjs](https://www.npmjs.com/package/bcryptjs) for password hashing
-- **HTTP Client**: [axios](https://axios-http.com/)
-- **Development**: [ts-node-dev](https://www.npmjs.com/package/ts-node-dev) for live-reloading
+## 🚀 Getting Started
 
-## Getting Started
-
-Follow these instructions to get a copy of the project up and running on your local machine for development and testing purposes.
+To get the entire project up and running, you will need to set up both the frontend and the backend components.
 
 ### Prerequisites
 
-You need to have Node.js and npm installed on your machine.
+You need to have the following software installed on your machine.
 - [Node.js](https://nodejs.org/en/download/) (which includes npm)
 - [PostgreSQL](https://www.postgresql.org/download/)
+- [Git](https://git-scm.com/downloads)
 
-### Installation
+### Project Installation
 
-1.  Clone the repository.
-2.  Navigate to the `server` directory.
-3.  Install the dependencies:
+1.  Clone the repository to your local machine:
+    ```sh
+    git clone <your-repository-url>
+    cd webPe
+    ```
+2.  Follow the setup instructions for the [Backend](#-backend) below.
+3.  Follow the setup instructions for the [Frontend](#-frontend).
+
+---
+
+## 🖥️ Frontend
+
+This section describes the client-side of the webPe application.
+
+> **TODO:** Please fill in the details about the frontend application.
+
+### Tech Stack
+
+*   **Framework**: `[e.g., React, Vue]`
+*   **Language**: `[e.g., TypeScript, JavaScript]`
+*   **Styling**: `[e.g., Tailwind CSS, Material-UI, CSS Modules]`
+*   **State Management**: `[e.g., Redux]`
+*   **Routing**: `[e.g., React Router]`
+
+### Setup and Running
+
+1.  Navigate to the frontend directory (e.g., `client` or `frontend`).
+    ```sh
+    cd <frontend-directory>
+    ```
+2.  Install the dependencies:
     ```sh
     npm install
     ```
-
-### Configuration
-
-1.  Create a `.env` file in the root of the `server` directory.
-2.  Add your database connection string to the `.env` file. Prisma uses this to connect to your database.
-
+3.  Start the development server:
+    ```sh
+    npm run dev
     ```
+
+---
+
+## ⚙️ Backend
+
+This is the backend server for the webPe application, built with Node.js and Express.
+
+### Tech Stack
+
+- **Runtime**: Node.js
+- **Framework**: Express.js
+- **Language**: TypeScript
+- **ORM**: Prisma
+- **Database**: PostgreSQL
+- **Authentication**: bcryptjs for password hashing
+- **HTTP Client**: axios
+- **Development**: ts-node-dev for live-reloading
+
+### Setup and Running
+
+1.  Navigate to the `server` directory:
+    ```sh
+    cd server
+    ```
+2.  Install the dependencies:
+    ```sh
+    npm install
+    ```
+3.  Create a `.env` file in the `server` directory and add your database connection string:
+    ```env
     DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
     ```
-
-3.  Apply the database schema using Prisma Migrate:
+4.  Apply the database schema using Prisma Migrate:
     ```sh
     npx prisma migrate dev
     ```
-
-## Available Scripts
-
-In the project directory, you can run the following commands:
-
-### `npm run dev`
-
-Runs the app in development mode.
-It will automatically restart the server if you make changes to the files.
-The server will be running at `http://localhost:PORT` (the port depends on your configuration).
-
-### `npm run seed`
-
-Runs the database seed script located in `prisma/seed.ts` to populate your database with initial data.
-
-### `npm test`
-
-Currently, there are no tests configured for this project.
+5.  (Optional) Seed the database with initial data:
+    ```sh
+    npm run seed
+    ```
+6.  Start the development server:
+    ```sh
+    npm run dev
+    ```
