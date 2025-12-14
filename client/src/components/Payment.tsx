@@ -1,82 +1,349 @@
 import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  TextField,
+  Button,
+  Alert,
+  CircularProgress,
+  InputAdornment,
+  MenuItem,
+  Typography,
+  LinearProgress,
+} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import SendIcon from '@mui/icons-material/Send';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
 
-// This should be in your .env file
-const PSP_SERVER_API = 'http://localhost:5000/api/v1/payments';
+const API_BASE_URL = 'http://localhost:3001/api';
 
-function Payment() {
-  const [paymentStatus, setPaymentStatus] = useState('IDLE'); // IDLE, PENDING, SUCCESS, FAILED
-  const [transactionId, setTransactionId] = useState(null);
+interface PaymentProps {
+  onSuccess?: () => void;
+  onClose?: () => void;
+}
 
-  // This effect will run when transactionId is set, starting the polling.
+interface FormErrors {
+  payerVpa?: string;
+  payeeVpa?: string;
+  amount?: string;
+}
+
+const Payment: React.FC<PaymentProps> = ({ onSuccess, onClose }) => {
+  const navigate = useNavigate();
+  const [payerVpa, setPayerVpa] = useState('');
+  const [payeeVpa, setPayeeVpa] = useState('');
+  const [amount, setAmount] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<'IDLE' | 'INITIATING' | 'PENDING' | 'SUCCESS' | 'FAILED'>('IDLE');
+  const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [pollingAttempts, setPollingAttempts] = useState(0);
+  const MAX_POLLING_ATTEMPTS = 30; // 1 minute max (30 * 2 seconds)
+
+  // Mock user VPAs - replace with actual API call
+  const userVPAs = [
+    { value: 'user@webpe', label: 'user@webpe (Primary)' },
+    { value: 'john@webpe', label: 'john@webpe' },
+  ];
+
+  // VPA validation regex
+  const vpaRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/;
+
+  // Set default payer VPA on mount
   useEffect(() => {
-    let interval: any;
-    if (transactionId && paymentStatus === 'PENDING') {
-      interval = setInterval(async () => {
-        console.log('Polling for status...');
-        try {
-          const response = await fetch(`${PSP_SERVER_API}/status/${transactionId}`);
-          const data = await response.json();
+    if (userVPAs.length > 0 && !payerVpa) {
+      setPayerVpa(userVPAs[0].value);
+    }
+  }, []);
 
-          if (data.status !== 'PENDING') {
-            setPaymentStatus(data.status);
-            setTransactionId(null); // Stop polling
-            clearInterval(interval);
+  // Polling effect for transaction status
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    if (transactionId && paymentStatus === 'PENDING' && pollingAttempts < MAX_POLLING_ATTEMPTS) {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/transactions/${transactionId}/status`);
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch transaction status');
           }
-        } catch (error) {
-          console.error('Polling error:', error);
-          // Optional: Implement max retries for polling
+
+          const data = await response.json();
+          setPollingAttempts((prev) => prev + 1);
+
+          if (data.status === 'SUCCESS' || data.status === 'FAILED') {
+            const currentTransactionId = transactionId;
+            setPaymentStatus(data.status);
+            if (interval) clearInterval(interval);
+
+            if (data.status === 'SUCCESS') {
+              // Call success callback or navigate after a delay
+              setTimeout(() => {
+                if (onSuccess) {
+                  onSuccess();
+                } else if (onClose && currentTransactionId) {
+                  onClose();
+                  navigate(`/transactions/${currentTransactionId}`);
+                }
+              }, 2000);
+            } else {
+              setTransactionId(null);
+            }
+          }
+        } catch (err) {
+          console.error('Polling error:', err);
+          if (pollingAttempts >= MAX_POLLING_ATTEMPTS - 1) {
+            setError('Transaction status check timed out. Please check transaction history.');
+            setPaymentStatus('FAILED');
+            if (interval) clearInterval(interval);
+          }
         }
       }, 2000); // Poll every 2 seconds
     }
 
-    // Cleanup function to clear the interval when the component unmounts or dependencies change
-    return () => clearInterval(interval);
-  }, [transactionId, paymentStatus]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [transactionId, paymentStatus, pollingAttempts, onSuccess, onClose, navigate]);
 
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {};
 
-  const handlePay = async () => {
+    // Validate payer VPA
+    if (!payerVpa.trim()) {
+      newErrors.payerVpa = 'Payer VPA is required';
+    } else if (!vpaRegex.test(payerVpa.trim())) {
+      newErrors.payerVpa = 'Invalid VPA format';
+    }
+
+    // Validate payee VPA
+    if (!payeeVpa.trim()) {
+      newErrors.payeeVpa = 'Payee VPA is required';
+    } else if (!vpaRegex.test(payeeVpa.trim())) {
+      newErrors.payeeVpa = 'Invalid VPA format. Use format: username@provider';
+    } else if (payeeVpa.trim() === payerVpa) {
+      newErrors.payeeVpa = 'Payee VPA cannot be the same as payer VPA';
+    }
+
+    // Validate amount
+    if (!amount.trim()) {
+      newErrors.amount = 'Amount is required';
+    } else {
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        newErrors.amount = 'Amount must be greater than 0';
+      } else if (amountNum < 1) {
+        newErrors.amount = 'Minimum amount is ₹1';
+      } else if (amountNum > 100000) {
+        newErrors.amount = 'Maximum amount is ₹1,00,000';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setPaymentStatus('IDLE');
+
+    if (!validateForm()) {
+      return;
+    }
+
     setPaymentStatus('INITIATING');
-    
-    // Generate a unique ID on the client for idempotency
-    const clientRequestId = `client-${Date.now()}`;
+    setPollingAttempts(0);
 
     try {
-      const response = await fetch(`${PSP_SERVER_API}/initiate`, {
+      const response = await fetch(`${API_BASE_URL}/transactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          amount: 100.00, // Example amount
-          client_request_id: clientRequestId,
+          amount: parseFloat(amount),
+          payeeVpa: payeeVpa.trim(),
+          payerVpa: payerVpa.trim(),
         }),
       });
 
       const data = await response.json();
 
-      if (response.status === 202) { // 202 Accepted
-        setPaymentStatus('PENDING');
-        setTransactionId(data.transaction_id);
-      } else {
-        // Handle cases where the transaction was already processed (idempotency)
-        setPaymentStatus(data.status);
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to initiate payment');
       }
 
-    } catch (error) {
-      console.error('Payment initiation error:', error);
+      setPaymentStatus('PENDING');
+      setTransactionId(data.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while initiating payment');
       setPaymentStatus('FAILED');
     }
   };
 
+  const handleReset = () => {
+    setPaymentStatus('IDLE');
+    setTransactionId(null);
+    setError('');
+    setAmount('');
+    setPayeeVpa('');
+    setPollingAttempts(0);
+  };
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>WebPe</h1>
-        <button onClick={handlePay} disabled={paymentStatus === 'PENDING' || paymentStatus === 'INITIATING'}>
-          {paymentStatus === 'PENDING' ? 'Processing...' : 'Pay ₹100'}
-        </button>
-        <p>Status: <strong>{paymentStatus}</strong></p>
-      </header>
-    </div>
+    <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+
+      {paymentStatus === 'SUCCESS' && (
+        <Alert
+          severity="success"
+          icon={<CheckCircleIcon />}
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={handleReset}>
+              New Payment
+            </Button>
+          }
+        >
+          Payment successful! Transaction ID: {transactionId}
+        </Alert>
+      )}
+
+      {paymentStatus === 'FAILED' && (
+        <Alert
+          severity="error"
+          icon={<ErrorIcon />}
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={handleReset}>
+              Try Again
+            </Button>
+          }
+        >
+          Payment failed. Please try again.
+        </Alert>
+      )}
+
+      {paymentStatus === 'PENDING' && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Box sx={{ width: '100%', mb: 1 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Processing payment... Please wait.
+            </Typography>
+            <LinearProgress />
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            Transaction ID: {transactionId}
+          </Typography>
+        </Alert>
+      )}
+
+      <TextField
+        fullWidth
+        label="Payer VPA"
+        select
+        value={payerVpa}
+        onChange={(e) => setPayerVpa(e.target.value)}
+        margin="normal"
+        required
+        error={!!errors.payerVpa}
+        helperText={errors.payerVpa || 'Select the VPA to pay from'}
+        disabled={paymentStatus === 'PENDING' || paymentStatus === 'INITIATING' || paymentStatus === 'SUCCESS'}
+      >
+        {userVPAs.map((vpa) => (
+          <MenuItem key={vpa.value} value={vpa.value}>
+            {vpa.label}
+          </MenuItem>
+        ))}
+      </TextField>
+
+      <TextField
+        fullWidth
+        label="Payee VPA"
+        placeholder="recipient@webpe"
+        value={payeeVpa}
+        onChange={(e) => setPayeeVpa(e.target.value)}
+        margin="normal"
+        required
+        error={!!errors.payeeVpa}
+        helperText={errors.payeeVpa || 'Enter the recipient\'s VPA address'}
+        disabled={paymentStatus === 'PENDING' || paymentStatus === 'INITIATING' || paymentStatus === 'SUCCESS'}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <AccountBalanceWalletIcon fontSize="small" color="action" />
+            </InputAdornment>
+          ),
+        }}
+      />
+
+      <TextField
+        fullWidth
+        label="Amount"
+        type="number"
+        placeholder="0.00"
+        value={amount}
+        onChange={(e) => {
+          const value = e.target.value;
+          if (value === '' || /^\d*\.?\d{0,2}$/.test(value)) {
+            setAmount(value);
+          }
+        }}
+        margin="normal"
+        required
+        error={!!errors.amount}
+        helperText={errors.amount || 'Enter the amount to pay (₹1 - ₹1,00,000)'}
+        disabled={paymentStatus === 'PENDING' || paymentStatus === 'INITIATING' || paymentStatus === 'SUCCESS'}
+        InputProps={{
+          startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+        }}
+        inputProps={{
+          min: 1,
+          max: 100000,
+          step: 0.01,
+        }}
+      />
+
+      <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+        {onClose && (
+          <Button
+            variant="outlined"
+            onClick={onClose}
+            disabled={paymentStatus === 'PENDING' || paymentStatus === 'INITIATING'}
+          >
+            Cancel
+          </Button>
+        )}
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={paymentStatus === 'PENDING' || paymentStatus === 'INITIATING' || paymentStatus === 'SUCCESS'}
+          startIcon={
+            paymentStatus === 'INITIATING' || paymentStatus === 'PENDING' ? (
+              <CircularProgress size={20} />
+            ) : (
+              <SendIcon />
+            )
+          }
+        >
+          {paymentStatus === 'INITIATING'
+            ? 'Initiating...'
+            : paymentStatus === 'PENDING'
+            ? 'Processing...'
+            : paymentStatus === 'SUCCESS'
+            ? 'Success!'
+            : 'Pay'}
+        </Button>
+      </Box>
+    </Box>
   );
-}
+};
 
 export default Payment;
