@@ -11,6 +11,7 @@ import TransactionDetailsPage from './pages/TransactionDetailsPage';
 import CreateVPAPage from './pages/CreateVPAPage';
 import SendMoneyPage from './pages/SendMoneyPage';
 import RequestMoneyPage from './pages/RequestMoneyPage';
+import ProfilePage from './pages/ProfilePage';
 import Navbar from './components/Navbar';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -41,6 +42,7 @@ function App() {
           <Route path="/create-vpa" element={<CreateVPAPage />} />
           <Route path="/send-money" element={<SendMoneyPage />} />
           <Route path="/request-money" element={<RequestMoneyPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/" element={<Navigate replace to="/login" />} />
         </Routes>
       </Router>

@@ -146,6 +146,9 @@ const Navbar: React.FC = () => {
             <NavButton onClick={() => handleNavigation('/create-vpa')}>
               Create VPA
             </NavButton>
+            <NavButton onClick={() => handleNavigation('/profile')}>
+              Profile
+            </NavButton>
             <NavButton onClick={handleLogout} sx={{ ml: 1 }}>
               Logout
             </NavButton>
