@@ -15,6 +15,7 @@ import {
   Divider,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import PaymentDialog from '../components/PaymentDialog';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
@@ -23,10 +24,10 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const { balance, vpas } = useAuth();
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
 
   // Mock data - replace with actual API calls
-  const balance = 12500.50;
   const totalTransactions = 47;
   const successRate = 95.7; // percentage
   const recentTransactions = [
@@ -127,7 +128,7 @@ const DashboardPage: React.FC = () => {
                       Active VPAs
                     </Typography>
                     <Typography variant="h4" component="div" sx={{ fontWeight: 600 }}>
-                      2
+                      {vpas.length}
                     </Typography>
                   </Box>
                 </Box>

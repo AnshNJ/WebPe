@@ -2,7 +2,8 @@ import React from 'react';
 import { AppBar, Toolbar, Typography, Box, Button } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { keyframes } from '@emotion/react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
   background: 'linear-gradient(135deg, rgba(144, 202, 249, 0.1) 0%, rgba(244, 143, 177, 0.1) 100%)',
@@ -112,10 +113,10 @@ const DecorativeDots = styled(Box)({
 
 const Navbar: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const isAuthenticated = location.pathname !== '/login';
+  const { isAuthenticated, logout } = useAuth();
 
   const handleLogout = () => {
+    logout();
     navigate('/login');
   };
 
