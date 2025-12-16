@@ -19,18 +19,18 @@ model Role {
 }
 
 model User {
-  id           Int       @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   username     String
-  email        String    @unique
-  passwordHash String    @map("password_hash")
+  email        String        @unique
+  passwordHash String        @map("password_hash")
   vpa          String?
   roleId       Int
-  role         Role      @relation(fields: [roleId], references: [id])
+  role         Role          @relation(fields: [roleId], references: [id])
   wallet       Wallet?
   vpas         Vpa[]
   transactions Transaction[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("users")
 }
@@ -60,7 +60,7 @@ model Wallet {
 }
 
 model Transaction {
-  id        String            @id
+  id        Int               @id @default(autoincrement())
   amount    Decimal           @db.Decimal(10, 2)
   payerVpa  String            @map("payer_vpa")
   payeeVpa  String            @map("payee_vpa")

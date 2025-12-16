@@ -2,6 +2,7 @@ export enum TransactionStatus {
   PENDING = 'PENDING',
   SUCCESS = 'SUCCESS',
   FAILED = 'FAILED',
+  TIMEOUT = 'TIMEOUT'
 }
 
 export interface Transaction {

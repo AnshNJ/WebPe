@@ -1,32 +1,220 @@
 import { Request, Response } from 'express';
-import {
-  createTransaction,
-  findTransactionStatusById,
-} from '../services/transaction.service';
+import prisma from '../utils/prisma.util';
+import { TransactionStatus } from '../interfaces/transaction.interface';
+import { TransactionStatus as PrismaTransactionStatus } from '@prisma/client';
+import StatusCodes from 'http-status-codes';
+import { NotFoundError, BadRequestError, UnauthenticatedError, ForbiddenError } from '../errors';
+import { processTransactionBalance, rollbackTransactionBalance } from '../services/wallet.service';
+import logger from '../utils/logger.util';
 
-export const initiatePayment = async (req: Request, res: Response) => {
-  try {
-    const { amount, payeeVpa, payerVpa } = req.body;
-    if (!amount || !payeeVpa || !payerVpa) {
-      return res.status(400).json({ message: 'Missing required fields' });
-    }
-
-    const transaction = await createTransaction(amount, payeeVpa, payerVpa);
-    res.status(201).json(transaction);
-  } catch (error) {
-    res.status(500).json({ message: 'Internal server error' });
+const getTransactions = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user) {
+    throw new UnauthenticatedError("Unauthorized");
   }
+
+  // Get user's VPAs to filter transactions
+  const userVpas = await prisma.vpa.findMany({
+    where: { userId: Number(user.userId) },
+    select: { vpa: true }
+  });
+  const vpaList = userVpas.map((v: { vpa: string }) => v.vpa);
+
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      OR: [
+        { payerVpa: { in: vpaList } },
+        { payeeVpa: { in: vpaList } }
+      ]
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  res.status(StatusCodes.OK).json({ message: 'Transactions fetched successfully', transactions });
 };
 
-export const getTransactionStatus = (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const status = findTransactionStatusById(id);
-    if (!status) {
-      return res.status(404).json({ message: 'Transaction not found' });
-    }
-    res.status(200).json({ status });
-  } catch (error) {
-    res.status(500).json({ message: 'Internal server error' });
+
+const getTransactionDetails = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user) {
+    throw new UnauthenticatedError("Unauthorized");
   }
+
+  const { id } = req.params;
+  const transactionId = Number(id);
+  
+  if (isNaN(transactionId) || transactionId <= 0) {
+    throw new BadRequestError("Invalid transaction ID");
+  }
+
+  const transaction = await prisma.transaction.findUnique({ 
+    where: { id: transactionId } 
+  });
+
+  if (!transaction) {
+    throw new NotFoundError("Transaction not found");
+  }
+
+  // Verify user owns this transaction (is payer or payee)
+  const userVpas = await prisma.vpa.findMany({
+    where: { userId: Number(user.userId) },
+    select: { vpa: true }
+  });
+  const vpaList = userVpas.map((v: { vpa: string }) => v.vpa);
+
+  if (!vpaList.includes(transaction.payerVpa) && !vpaList.includes(transaction.payeeVpa)) {
+    throw new ForbiddenError("You don't have permission to view this transaction");
+  }
+
+  res.status(StatusCodes.OK).json({ message: 'Transaction details fetched successfully', transaction });
+};
+
+
+const getTransactionStatus = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user) {
+    throw new UnauthenticatedError("Unauthorized");
+  }
+
+  const { id } = req.params;
+  const transactionId = Number(id);
+  
+  if (isNaN(transactionId) || transactionId <= 0) {
+    throw new BadRequestError("Invalid transaction ID");
+  }
+
+  const transaction = await prisma.transaction.findUnique({ 
+    where: { id: transactionId } 
+  });
+
+  if (!transaction) {
+    throw new NotFoundError("Transaction not found");
+  }
+
+  // Verify user owns this transaction
+  const userVpas = await prisma.vpa.findMany({
+    where: { userId: Number(user.userId) },
+    select: { vpa: true }
+  });
+  const vpaList = userVpas.map((v: { vpa: string }) => v.vpa);
+
+  if (!vpaList.includes(transaction.payerVpa) && !vpaList.includes(transaction.payeeVpa)) {
+    throw new ForbiddenError("You don't have permission to view this transaction");
+  }
+
+  res.status(StatusCodes.OK).json({ message: 'Transaction status fetched successfully', status: transaction.status });
+};
+
+const getTransactionCountByStatus = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user) {
+    throw new UnauthenticatedError("Unauthorized");
+  }
+
+  const { status } = req.query;
+  
+  // Get user's VPAs to filter transactions
+  const userVpas = await prisma.vpa.findMany({
+    where: { userId: Number(user.userId) },
+    select: { vpa: true }
+  });
+  const vpaList = userVpas.map((v: { vpa: string }) => v.vpa);
+
+  const count = await prisma.transaction.count({ 
+    where: { 
+      AND: [
+        { status: status as PrismaTransactionStatus },
+        {
+          OR: [
+            { payerVpa: { in: vpaList } },
+            { payeeVpa: { in: vpaList } }
+          ]
+        }
+      ]
+    } 
+  });
+
+  res.status(StatusCodes.OK).json({ message: 'Transaction count fetched successfully', count });
+};
+
+/**
+ * Create a new transaction and process wallet balance updates
+ * This endpoint:
+ * 1. Validates the transaction request
+ * 2. Creates transaction record with PENDING status
+ * 3. Creates transaction record in database and earmarks balance
+ */
+  const createTransaction = async (req: Request, res: Response) => {
+    const user = req.user;
+    if (!user) {
+      throw new UnauthenticatedError("Unauthorized");
+    }
+    const { amount, payeeVpa, payerVpa } = req.body;
+    
+    try {
+      const pendingTransaction = await prisma.$transaction(async (tx) => {
+        await processTransactionBalance(payerVpa, payeeVpa, amount);
+        
+        const transaction = await prisma.transaction.create({
+          data: {
+            amount,
+            payeeVpa,
+            payerVpa,
+            status: TransactionStatus.PENDING,
+            userId: Number(user.userId)
+          }
+        });
+        
+        return transaction;
+      })
+      
+     // await callExternalUPIApi(pendingTransaction.id, payerVpa, payeeVpa, amount);
+     logger.info('Transaction created and balance earmarked successfully', { transactionId: pendingTransaction.id, payerVpa, payeeVpa, amount });
+
+     res.status(StatusCodes.ACCEPTED).json({ 
+      message: 'Transaction initiated. Awaiting final status confirmation.', 
+      transactionId: pendingTransaction.id 
+    });
+    } catch (error) {
+      throw new BadRequestError("Failed to initiate transaction. Please try again.");
+    }
+  };
+
+  const processTransactionCallback = async (req: Request, res: Response) => {
+    const { transactionId, finalStatus } = req.body;
+    const transaction = await prisma.transaction.findUnique({
+      where: { id: transactionId }
+    });
+    if (!transaction || transaction.status !== TransactionStatus.PENDING) {
+      res.status(StatusCodes.OK).json({ message: 'Transaction not found or already processed' });
+      return;
+    }
+
+    if(finalStatus === TransactionStatus.SUCCESS) {
+      await prisma.transaction.update({
+        where: { id: transactionId },
+        data: { status: TransactionStatus.SUCCESS }
+      });
+      logger.info(`Transaction ${transactionId} successfully confirmed by external system`);
+    } else if(finalStatus === TransactionStatus.FAILED || finalStatus === TransactionStatus.TIMEOUT) {
+
+      await rollbackTransactionBalance(transaction.payerVpa, transaction.payeeVpa, Number(transaction.amount));
+
+      await prisma.transaction.update({
+        where: { id: transactionId },
+        data: { status: TransactionStatus.FAILED}
+      });
+      logger.info(`Transaction ${transactionId} failed or timed out. Balance rolled back successfully`);
+    }
+
+    res.status(StatusCodes.OK).json({ message: 'Callback processed successfully', status: finalStatus });
+  };
+
+export { 
+  getTransactions, 
+  getTransactionDetails, 
+  getTransactionStatus, 
+  getTransactionCountByStatus,
+  createTransaction,
+  processTransactionCallback 
 };
