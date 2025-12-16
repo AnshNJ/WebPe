@@ -5,6 +5,7 @@ import {
 } from '../interfaces/transaction.interface';
 import { transactionStore } from '../store';
 import { NPCI_API_URL } from '../config';
+import logger from '../utils/logger.util';
 
 const forwardToNpci = async (transaction: Transaction) => {
   try {
@@ -20,7 +21,7 @@ const forwardToNpci = async (transaction: Transaction) => {
 
     updateTransactionStatus(transaction.id, pspStatus);
   } catch (error) {
-    console.error('Failed to communicate with NPCI:', error);
+    logger.error('Failed to communicate with NPCI:', { error, transactionId: transaction.id });
     updateTransactionStatus(transaction.id, TransactionStatus.FAILED);
   }
 };
@@ -57,6 +58,6 @@ export const updateTransactionStatus = (id: string, status: TransactionStatus) =
     transaction.status = status;
     transaction.updatedAt = new Date();
     transactionStore.set(id, transaction);
-    console.log(`Transaction ${id} updated to ${status}`);
+    logger.info(`Transaction ${id} updated to ${status}`, { transactionId: id, status });
   }
 };
