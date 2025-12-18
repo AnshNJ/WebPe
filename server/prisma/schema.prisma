@@ -48,27 +48,29 @@ model Vpa {
 }
 
 model Wallet {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balance   Decimal  @default(0) @db.Decimal(10, 2)
-  currency  String   @default("INR")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Decimal  @default(0) @db.Decimal(10, 2)
+  lockedBalance Decimal @default(0) @db.Decimal(10, 2) @map("locked_balance")
+  currency     String   @default("INR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@map("wallets")
 }
 
 model Transaction {
-  id        Int               @id @default(autoincrement())
-  amount    Decimal           @db.Decimal(10, 2)
-  payerVpa  String            @map("payer_vpa")
-  payeeVpa  String            @map("payee_vpa")
-  status    TransactionStatus @default(PENDING)
-  userId    Int?
-  user      User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt DateTime          @default(now()) @map("created_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
+  id                  Int               @id @default(autoincrement())
+  clientTransactionId String  @unique
+  amount              Decimal           @db.Decimal(10, 2)
+  payerVpa            String            @map("payer_vpa")
+  payeeVpa            String            @map("payee_vpa")
+  status              TransactionStatus @default(PENDING)
+  userId              Int?
+  user                User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
 
   @@map("transactions")
 }

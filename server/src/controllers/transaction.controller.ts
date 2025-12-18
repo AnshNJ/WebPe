@@ -4,7 +4,7 @@ import { TransactionStatus } from '../interfaces/transaction.interface';
 import { TransactionStatus as PrismaTransactionStatus } from '@prisma/client';
 import StatusCodes from 'http-status-codes';
 import { NotFoundError, BadRequestError, UnauthenticatedError, ForbiddenError } from '../errors';
-import { processTransactionBalance, rollbackTransactionBalance } from '../services/wallet.service';
+import { processTransactionBalance, confirmTransactionBalance, rollbackTransactionBalance } from '../services/wallet.service';
 import logger from '../utils/logger.util';
 
 const getTransactions = async (req: Request, res: Response) => {
@@ -149,14 +149,33 @@ const getTransactionCountByStatus = async (req: Request, res: Response) => {
     if (!user) {
       throw new UnauthenticatedError("Unauthorized");
     }
-    const { amount, payeeVpa, payerVpa } = req.body;
+    const { amount, payeeVpa, payerVpa, clientTransactionId } = req.body;
+
+    if (!amount || !payeeVpa || !payerVpa || !clientTransactionId) {
+      throw new BadRequestError("Please provide amount, payeeVpa, payerVpa, and clientTransactionId");
+    }
+
+    const existingTransaction = await prisma.transaction.findUnique({
+      where: { clientTransactionId }
+    });
+    
+    if (existingTransaction) {
+      logger.warn('Duplicate request detected via clientTransactionId', { clientTransactionId });
+      return res.status(StatusCodes.OK).json({ 
+        message: `Transaction already processed or pending. Status: ${existingTransaction.status}`,
+        transaction: existingTransaction,
+      });
+    }
     
     try {
       const pendingTransaction = await prisma.$transaction(async (tx) => {
-        await processTransactionBalance(payerVpa, payeeVpa, amount);
+        // Earmark balance: debit payer balance and add to lockedBalance
+        await processTransactionBalance(tx, payerVpa, payeeVpa, amount);
         
-        const transaction = await prisma.transaction.create({
+        // Create transaction record atomically
+        const transaction = await tx.transaction.create({
           data: {
+            clientTransactionId,
             amount,
             payeeVpa,
             payerVpa,
@@ -190,24 +209,38 @@ const getTransactionCountByStatus = async (req: Request, res: Response) => {
       return;
     }
 
-    if(finalStatus === TransactionStatus.SUCCESS) {
-      await prisma.transaction.update({
-        where: { id: transactionId },
-        data: { status: TransactionStatus.SUCCESS }
-      });
-      logger.info(`Transaction ${transactionId} successfully confirmed by external system`);
-    } else if(finalStatus === TransactionStatus.FAILED || finalStatus === TransactionStatus.TIMEOUT) {
+    try {
+      if(finalStatus === TransactionStatus.SUCCESS) {
+        // Confirm transaction: release locked balance and credit payee
+        await prisma.$transaction(async (tx) => {
+          await confirmTransactionBalance(tx, transaction.payerVpa, transaction.payeeVpa, transaction.amount);
+          
+          await tx.transaction.update({
+            where: { id: transactionId },
+            data: { status: TransactionStatus.SUCCESS }
+          });
+        });
+        
+        logger.info(`Transaction ${transactionId} successfully confirmed by external system`);
+      } else if(finalStatus === TransactionStatus.FAILED || finalStatus === TransactionStatus.TIMEOUT) {
+        // Rollback transaction: release locked balance back to payer
+        await prisma.$transaction(async (tx) => {
+          await rollbackTransactionBalance(tx, transaction.payerVpa, transaction.payeeVpa, transaction.amount);
+          
+          await tx.transaction.update({
+            where: { id: transactionId },
+            data: { status: TransactionStatus.FAILED}
+          });
+        });
+        
+        logger.info(`Transaction ${transactionId} failed or timed out. Balance rolled back successfully`);
+      }
 
-      await rollbackTransactionBalance(transaction.payerVpa, transaction.payeeVpa, Number(transaction.amount));
-
-      await prisma.transaction.update({
-        where: { id: transactionId },
-        data: { status: TransactionStatus.FAILED}
-      });
-      logger.info(`Transaction ${transactionId} failed or timed out. Balance rolled back successfully`);
+      res.status(StatusCodes.OK).json({ message: 'Callback processed successfully', status: finalStatus });
+    } catch (error) {
+      logger.error(`Error processing transaction callback for transaction ${transactionId}:`, error);
+      throw new BadRequestError('Failed to process transaction callback');
     }
-
-    res.status(StatusCodes.OK).json({ message: 'Callback processed successfully', status: finalStatus });
   };
 
 export { 
