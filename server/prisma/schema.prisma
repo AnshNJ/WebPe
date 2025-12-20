@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id           Int           @id @default(autoincrement())
+  username     String
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  vpa          String?
+  roleId       Int
+  role         Role          @relation(fields: [roleId], references: [id])
+  wallet       Wallet?
+  vpas         Vpa[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("users")
+}
+
+model Vpa {
+  id        Int      @id @default(autoincrement())
+  vpa       String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("vpas")
+}
+
+model Wallet {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Decimal  @default(0) @db.Decimal(10, 2)
+  lockedBalance Decimal @default(0) @db.Decimal(10, 2) @map("locked_balance")
+  currency     String   @default("INR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id                  Int               @id @default(autoincrement())
+  clientTransactionId String  @unique
+  amount              Decimal           @db.Decimal(10, 2)
+  payerVpa            String            @map("payer_vpa")
+  payeeVpa            String            @map("payee_vpa")
+  status              TransactionStatus @default(PENDING)
+  userId              Int?
+  user                User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  @@map("transactions")
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}

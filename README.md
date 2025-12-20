@@ -5,102 +5,169 @@
 
 ## About The Project
 
-webPe is a full-stack application that aims to replicate the core functionalities of a Unified Payments Interface (UPI) ecosystem. It consists of a frontend client and a backend server, working together to simulate digital payment transactions.
+webPe is a full-stack platform that replicates the core functionalities of the Unified Payments Interface (UPI) ecosystem. It comprises a React frontend (with Material UI), a Node/Express backend, Prisma/PostgreSQL for data storage, and a mock NPCI server for payment clearing.
 
 ---
 
 ## 🚀 Getting Started
 
-To get the entire project up and running, you will need to set up both the frontend and the backend components.
-
 ### Prerequisites
 
-You need to have the following software installed on your machine.
-- [Node.js](https://nodejs.org/en/download/) (which includes npm)
+- [Node.js](https://nodejs.org/en/download/) (npm included)
 - [PostgreSQL](https://www.postgresql.org/download/)
 - [Git](https://git-scm.com/downloads)
 
 ### Project Installation
 
-1.  Clone the repository to your local machine:
+1.  Clone the repository:
     ```sh
     git clone <your-repository-url>
     cd webPe
     ```
-2.  Follow the setup instructions for the [Backend](#-backend) below.
-3.  Follow the setup instructions for the [Frontend](#-frontend).
+2.  Set up the backend, frontend, and NPCI mock server (see detailed instructions below).
 
 ---
 
-## 🖥️ Frontend
-
-This section describes the client-side of the webPe application.
-
-> **TODO:** Please fill in the details about the frontend application.
+## 🖥️ Frontend (`client`)
 
 ### Tech Stack
 
-*   **Framework**: `[e.g., React, Vue]`
-*   **Language**: `[e.g., TypeScript, JavaScript]`
-*   **Styling**: `[e.g., Tailwind CSS, Material-UI, CSS Modules]`
-*   **State Management**: `[e.g., Redux]`
-*   **Routing**: `[e.g., React Router]`
+- **Framework**: React (TypeScript)
+- **Styling/UI**: Material-UI (MUI)
+- **Routing**: React Router v6+
+- **State/Context**: React Context API for authentication and user state
 
-### Setup and Running
+### Key Features
 
-1.  Navigate to the frontend directory (e.g., `client` or `frontend`).
-    ```sh
-    cd <frontend-directory>
-    ```
-2.  Install the dependencies:
-    ```sh
-    npm install
-    ```
-3.  Start the development server:
-    ```sh
-    npm run dev
-    ```
+- **Authentication**: Login page, JWT storage, protected routes
+- **Pages**:
+  - Dashboard (balance, quick stats, recent & all transactions)
+  - Send Money & Request Money flows (with validation)
+  - Transaction History and Transaction Details
+  - Profile/Account page (user stats, wallet info, VPAs)
+  - Manage VPAs (CRUD and set primary)
+- **Persistent auth context**: All user/account state managed via React context across the app
+- **Modern UI**: Dark theme, gradients, responsive, accessible components
+- **API integration**: Calls to backend for all data, uses JWT in headers
+
+### Setup & Running
+
+```sh
+cd client
+npm install
+npm run dev
+```
+Visit [http://localhost:5173](http://localhost:5173) (or as shown in terminal).
 
 ---
 
-## ⚙️ Backend
-
-This is the backend server for the webPe application, built with Node.js and Express.
+## ⚙️ Backend (PSP Server) (`server`)
 
 ### Tech Stack
 
-- **Runtime**: Node.js
-- **Framework**: Express.js
+- **Framework**: Node.js, Express.js
 - **Language**: TypeScript
 - **ORM**: Prisma
 - **Database**: PostgreSQL
-- **Authentication**: bcryptjs for password hashing
-- **HTTP Client**: axios
-- **Development**: ts-node-dev for live-reloading
+- **Authentication**: JWT (planned), bcryptjs
+- **API Client**: axios (for NPCI)
+- **Development**: ts-node-dev, nodemon
 
-### Setup and Running
+### API Endpoints
 
-1.  Navigate to the `server` directory:
-    ```sh
-    cd server
-    ```
-2.  Install the dependencies:
-    ```sh
-    npm install
-    ```
-3.  Create a `.env` file in the `server` directory and add your database connection string:
-    ```env
-    DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
-    ```
-4.  Apply the database schema using Prisma Migrate:
-    ```sh
-    npx prisma migrate dev
-    ```
-5.  (Optional) Seed the database with initial data:
-    ```sh
-    npm run seed
-    ```
-6.  Start the development server:
-    ```sh
-    npm run dev
-    ```
+#### Authentication
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- (planned) JWT tokens in HTTP Authorization header
+
+#### User
+
+- `GET /api/user/profile` – Profile, account stats
+- `GET /api/user/balance` – Wallet balance
+- `PUT /api/user/profile` – Update info
+
+#### VPAs
+
+- `GET /api/user/vpas` – List all VPAs for user
+- `POST /api/vpas` – Create VPA
+- `PATCH /api/vpas/:id/set-primary` – Set primary VPA
+- `DELETE /api/vpas/:id` – Remove VPA
+
+#### Transactions
+
+- `POST /api/transactions` – Initiate payment (calls NPCI mock)
+- `GET /api/transactions/:id/status` – Poll status (PENDING, SUCCESS, FAILED)
+- `GET /api/transactions/:id` – Transaction details (planned)
+- `GET /api/transactions` – Transaction history (planned with filters for status, date, VPA, etc.)
+
+#### Money Requests (Planned)
+
+- `POST /api/money-requests`
+- `GET /api/money-requests/pending`
+- etc.
+
+### Integration with NPCI
+
+- Payment requests forwarded to mock NPCI server at `http://localhost:3002/api/process-payment` (see NPCI section)
+
+### Setup & Running
+
+```sh
+cd server
+npm install
+# Create & edit .env as needed (see below)
+npx prisma migrate dev
+npm run dev
+```
+
+#### Environment Variables (`.env` example)
+
+```
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public
+JWT_SECRET=<your-secret>
+NPCI_API_URL=http://localhost:3002/api
+PORT=3001
+```
+
+---
+
+## 🏦 NPCI Mock Server (`npci-server`)
+
+Simulates third-party payment clearing for UPI.
+
+- Exposes: `POST /api/process-payment`
+- Payload: `{ pspTransactionId, amount, payerVpa, payeeVpa }`
+- Responds: `{ status: 'approved' | 'rejected', message }`
+- Behavior: Approves/rejects with random (configurable) success rate and delay for realism.
+
+**Setup**:
+```sh
+cd npci-server
+npm install
+npm run dev
+```
+Server runs on port 3002 by default.
+
+---
+
+## Developing, Debugging, and Extending
+
+- **Frontend**: All major pages are in `client/src/pages/`
+- **Context**: Extend `client/src/contexts/AuthContext.tsx` for new user/account- or wallet-related state.
+- **Backend**: All routers and controllers in `server/src/routes/` and `server/src/controllers/`
+- **DB Models**: Managed with Prisma in `server/prisma/schema.prisma`. Use `npx prisma studio` for admin UI.
+
+---
+
+## Contribution and Feedback
+
+PRs and issues welcome! See TODOs in code comments and the open [issues](link-to-issues).
+
+---
+
+## License
+
+MIT License (add your info here)
+
+---
