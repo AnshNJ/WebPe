@@ -1,5 +1,6 @@
 import { config } from '../config';
 import logger from '../utils/logger.util';
+import axios from 'axios';
 
 export interface ProcessPaymentRequest {
   pspTransactionId: string;
@@ -81,7 +82,10 @@ const validateRequest = (data: ProcessPaymentRequest): { valid: boolean; error?:
 
 /**
  * Process payment request
- * Simulates payment clearing with configurable delay and success rate
+ * Simulates NPCI payment flow:
+ * 1. Immediate acknowledgment of receipt
+ * 2. Asynchronous processing with delay
+ * 3. Callback to PSP with final status
  */
 export const processPayment = async (
   data: ProcessPaymentRequest
@@ -94,18 +98,57 @@ export const processPayment = async (
     throw new Error(validation.error);
   }
 
+  // Generate NPCI transaction ID immediately for acknowledgment
+  const npciTransactionId = generateNpciTransactionId();
+
+  // Log payment request receipt
   logger.info('Payment request received', {
     pspTransactionId: data.pspTransactionId,
+    npciTransactionId,
     amount: data.amount,
     payerVpa: data.payerVpa,
     payeeVpa: data.payeeVpa,
   });
 
-  // Generate random processing delay
+  // Start asynchronous processing (fire and forget)
+  // Don't await - this allows immediate response to PSP
+  processPaymentAsync(data, npciTransactionId, startTime).catch((error) => {
+    logger.error('Error in async payment processing', {
+      pspTransactionId: data.pspTransactionId,
+      npciTransactionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+
+  // Return immediate acknowledgment
+  return {
+    status: 'approved', // Acknowledgment - actual status will come via callback
+    message: 'Payment request received and processing',
+    npciTransactionId,
+    processedAt: new Date().toISOString(),
+  };
+};
+
+/**
+ * Asynchronously process payment and send callback to PSP
+ * This simulates the actual NPCI bank handshake and processing
+ */
+const processPaymentAsync = async (
+  data: ProcessPaymentRequest,
+  npciTransactionId: string,
+  startTime: number
+): Promise<void> => {
+  // Generate random processing delay (simulating bank processing time)
   const delay = Math.floor(
     Math.random() * (config.maxProcessingDelayMs - config.minProcessingDelayMs + 1) +
       config.minProcessingDelayMs
   );
+
+  logger.info('Processing payment', {
+    pspTransactionId: data.pspTransactionId,
+    npciTransactionId,
+    estimatedDelayMs: delay,
+  });
 
   // Simulate processing delay
   await sleep(delay);
@@ -113,40 +156,57 @@ export const processPayment = async (
   // Determine approval/rejection based on success rate
   const random = Math.random();
   const isApproved = random < config.successRate;
+  const finalStatus = isApproved ? 'SUCCESS' : 'FAILED';
 
-  const processedAt = new Date().toISOString();
+  const processingTime = Date.now() - startTime;
 
   if (isApproved) {
-    const npciTransactionId = generateNpciTransactionId();
-    const processingTime = Date.now() - startTime;
-
     logger.info('Payment approved', {
       pspTransactionId: data.pspTransactionId,
       npciTransactionId,
       processingTimeMs: processingTime,
     });
-
-    return {
-      status: 'approved',
-      message: 'Payment processed successfully',
-      npciTransactionId,
-      processedAt,
-    };
   } else {
     const rejectionReason = getRandomRejectionReason();
-    const processingTime = Date.now() - startTime;
-
     logger.warn('Payment rejected', {
       pspTransactionId: data.pspTransactionId,
+      npciTransactionId,
       reason: rejectionReason,
       processingTimeMs: processingTime,
     });
+  }
 
-    return {
-      status: 'rejected',
-      message: rejectionReason,
-      processedAt,
-    };
+  // Send callback to PSP server
+  try {
+    // Note: PSP callback endpoint is /api/v1/transactions/callback
+    // It expects: { transactionId: number | string, finalStatus: 'SUCCESS' | 'FAILED' | 'TIMEOUT' }
+    // The transactionId can be numeric ID or clientTransactionId (string)
+    // PSP will lookup by both id and clientTransactionId
+    const callbackUrl = `${config.pspApiUrl}/transactions/callback`;
+    
+    // Try to parse as number, but send as-is if it's not numeric (PSP should handle lookup)
+    const transactionId = /^\d+$/.test(data.pspTransactionId) 
+      ? parseInt(data.pspTransactionId, 10) 
+      : data.pspTransactionId;
+    
+    await axios.post(callbackUrl, {
+      transactionId: transactionId,
+      finalStatus: finalStatus,
+      npciRefId: npciTransactionId,
+    });
+
+    logger.info('Callback sent to PSP successfully', {
+      pspTransactionId: data.pspTransactionId,
+      npciTransactionId,
+      status: finalStatus,
+      callbackUrl,
+    });
+  } catch (error) {
+    logger.error('Error sending callback to PSP', {
+      pspTransactionId: data.pspTransactionId,
+      npciTransactionId,
+      error: error instanceof Error ? error.message : String(error),
+      callbackUrl: `${config.pspApiUrl}/transactions/callback`,
+    });
   }
 };
-

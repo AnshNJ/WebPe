@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Typography,
   Container,
@@ -21,20 +21,64 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import { apiRequest, parseResponse } from '../utils/api.util';
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { balance, vpas } = useAuth();
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
+  const [totalTransactions, setTotalTransactions] = useState<number>(0);
+  const [successCount, setSuccessCount] = useState<number>(0);
+  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
 
-  // Mock data - replace with actual API calls
-  const totalTransactions = 47;
-  const successRate = 95.7; // percentage
-  const recentTransactions = [
-    { id: 1, amount: -100, to: 'example@upi', date: '2024-01-15', status: 'SUCCESS' },
-    { id: 2, amount: 500, from: 'another@upi', date: '2024-01-14', status: 'SUCCESS' },
-    { id: 3, amount: -250, to: 'merchant@upi', date: '2024-01-13', status: 'SUCCESS' },
-  ];
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const [transactionsRes, successRes, recentRes] = await Promise.all([
+        apiRequest('/transactions/count?status=SUCCESS'),
+        apiRequest('/transactions/count?status=SUCCESS'),
+        apiRequest('/transactions'),
+      ]);
+
+      const [transactionsData, successData, recentData] = await Promise.all([
+        parseResponse<{ count: number }>(transactionsRes),
+        parseResponse<{ count: number }>(successRes),
+        parseResponse<{ transactions: any[] }>(recentRes),
+      ]);
+
+      setTotalTransactions(transactionsData.count);
+      setSuccessCount(successData.count);
+      
+      // Map recent transactions (limit to 5)
+      // Determine if user is payer or payee to show correct amount sign
+      const userVpaList = vpas.map((v: any) => v.address);
+      const mappedTransactions = recentData.transactions.slice(0, 5).map((tx: any) => {
+        const isPayer = userVpaList.includes(tx.payerVpa);
+        const amountValue = parseFloat(tx.amount.toString());
+        
+        return {
+          id: tx.id,
+          amount: isPayer ? -amountValue : amountValue, // Negative if user paid, positive if received
+          to: tx.payeeVpa,
+          from: tx.payerVpa,
+          payerVpa: tx.payerVpa,
+          payeeVpa: tx.payeeVpa,
+          date: new Date(tx.createdAt).toISOString().split('T')[0],
+          status: tx.status,
+        };
+      });
+      setRecentTransactions(mappedTransactions);
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+    }
+  };
+
+  const successRate = totalTransactions > 0 
+    ? ((successCount / totalTransactions) * 100).toFixed(1)
+    : '0.0';
 
   const handleOpenPaymentDialog = () => {
     setOpenPaymentDialog(true);
@@ -195,7 +239,7 @@ const DashboardPage: React.FC = () => {
                 <Divider sx={{ mb: 2 }} />
                 {recentTransactions.length > 0 ? (
                   <List sx={{ p: 0 }}>
-                    {recentTransactions.map((transaction, index) => (
+                    {recentTransactions.map((transaction: any, index: number) => (
                       <React.Fragment key={transaction.id}>
                         <ListItem
                           button

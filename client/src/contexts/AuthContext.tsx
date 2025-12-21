@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import { apiRequest, parseResponse } from '../utils/api.util';
 
 export interface VPA {
   id: string;
@@ -66,8 +66,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const checkAuthStatus = async () => {
     try {
-      // Check if user is logged in (e.g., check localStorage or API)
-      const token = localStorage.getItem('authToken');
+      // Check if user is logged in
+      const token = localStorage.getItem('accessToken');
       if (token) {
         // Verify token and load user data
         await loadUserData();
@@ -76,64 +76,56 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error) {
       console.error('Error checking auth status:', error);
+      localStorage.removeItem('accessToken');
       setLoading(false);
     }
   };
 
   const loadUserData = async () => {
     try {
-      // Mock API calls - replace with actual endpoints when available
-      // const [userRes, balanceRes, vpasRes] = await Promise.all([
-      //   fetch(`${API_BASE_URL}/user/profile`, {
-      //     headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
-      //   }),
-      //   fetch(`${API_BASE_URL}/user/balance`, {
-      //     headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
-      //   }),
-      //   fetch(`${API_BASE_URL}/user/vpas`, {
-      //     headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
-      //   }),
-      // ]);
+      const [userRes, balanceRes, vpasRes] = await Promise.all([
+        apiRequest('/users/profile'),
+        apiRequest('/users/balance'),
+        apiRequest('/vpas'),
+      ]);
 
-      // Mock data for now
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const [userData, balanceData, vpasData] = await Promise.all([
+        parseResponse<{ user: any }>(userRes),
+        parseResponse<{ balance: any }>(balanceRes),
+        parseResponse<{ vpas: any[] }>(vpasRes),
+      ]);
 
-      const mockUser: UserInfo = {
-        id: 'user_1',
-        name: 'John Doe',
-        email: 'john.doe@example.com',
-        phone: '+91 98765 43210',
-        accountCreated: '2024-01-01T00:00:00Z',
+      // Map user data
+      const userInfo: UserInfo = {
+        id: String(userData.user.id),
+        name: userData.user.username,
+        email: userData.user.email,
+        accountCreated: userData.user.createdAt,
       };
 
-      const mockBalance = 12500.50;
+      // Map balance (convert Decimal to number)
+      const balanceValue = typeof balanceData.balance === 'object' && balanceData.balance !== null
+        ? parseFloat(balanceData.balance.toString())
+        : parseFloat(String(balanceData.balance));
 
-      const mockVpas: VPA[] = [
-        {
-          id: 'vpa_1',
-          address: 'user@webpe',
-          displayName: 'John Doe',
-          isPrimary: true,
-          status: 'ACTIVE',
-          createdAt: '2024-01-01T00:00:00Z',
-        },
-        {
-          id: 'vpa_2',
-          address: 'john@webpe',
-          displayName: 'John Doe',
-          isPrimary: false,
-          status: 'ACTIVE',
-          createdAt: '2024-01-15T00:00:00Z',
-        },
-      ];
+      // Map VPAs
+      const mappedVpas: VPA[] = vpasData.vpas.map((vpa: any) => ({
+        id: String(vpa.id),
+        address: vpa.vpa,
+        displayName: userInfo.name,
+        isPrimary: vpa.isPrimary,
+        status: 'ACTIVE' as const,
+        createdAt: vpa.createdAt,
+      }));
 
-      setUser(mockUser);
-      setBalance(mockBalance);
-      setVpas(mockVpas);
+      setUser(userInfo);
+      setBalance(balanceValue);
+      setVpas(mappedVpas);
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Error loading user data:', error);
       setIsAuthenticated(false);
+      localStorage.removeItem('accessToken');
     } finally {
       setLoading(false);
     }
@@ -142,18 +134,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setLoading(true);
-      // Mock API call - replace with actual endpoint when available
-      // const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ email, password }),
-      // });
+      const response = await apiRequest('/auth/login', {
+        method: 'POST',
+        requireAuth: false,
+        body: JSON.stringify({ userEmail: email, password }),
+      });
 
-      // Mock login - always succeeds for now
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const data = await parseResponse<{ accessToken: string; refreshToken: string }>(response);
 
-      // Simulate storing token
-      localStorage.setItem('authToken', 'mock_token_' + Date.now());
+      // Store tokens
+      localStorage.setItem('accessToken', data.accessToken);
+      if (data.refreshToken) {
+        localStorage.setItem('refreshToken', data.refreshToken);
+      }
 
       // Load user data after successful login
       await loadUserData();
@@ -168,7 +161,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('authToken');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     setIsAuthenticated(false);
     setUser(null);
     setBalance(0);

@@ -32,8 +32,8 @@ import StarBorderIcon from '@mui/icons-material/StarBorder';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import { apiRequest, parseResponse } from '../utils/api.util';
+import { useAuth } from '../contexts/AuthContext';
 
 interface VPA {
   id: string;
@@ -46,6 +46,7 @@ interface VPA {
 
 const ManageVPAPage: React.FC = () => {
   const navigate = useNavigate();
+  const { vpas: contextVpas, refreshUserData } = useAuth();
   const [vpas, setVpas] = useState<VPA[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -61,42 +62,38 @@ const ManageVPAPage: React.FC = () => {
     loadVPAs();
   }, []);
 
+  // Sync with context VPAs
+  useEffect(() => {
+    if (contextVpas.length > 0) {
+      const mappedVpas: VPA[] = contextVpas.map((vpa) => ({
+        id: String(vpa.id),
+        address: vpa.address,
+        displayName: vpa.displayName,
+        isPrimary: vpa.isPrimary,
+        status: vpa.status || 'ACTIVE',
+        createdAt: vpa.createdAt,
+      }));
+      setVpas(mappedVpas);
+      setLoading(false);
+    }
+  }, [contextVpas]);
+
   const loadVPAs = async () => {
     setLoading(true);
     try {
-      // Mock API call - replace with actual endpoint when available
-      // const response = await fetch(`${API_BASE_URL}/user/vpas`);
-      // const data = await response.json();
+      const response = await apiRequest('/vpas');
+      const data = await parseResponse<{ vpas: any[]; message: string }>(response);
 
-      // Mock data
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const mappedVpas: VPA[] = data.vpas.map((vpa: any) => ({
+        id: String(vpa.id),
+        address: vpa.vpa,
+        displayName: 'User',
+        isPrimary: vpa.isPrimary,
+        status: 'ACTIVE' as const,
+        createdAt: vpa.createdAt,
+      }));
 
-      setVpas([
-        {
-          id: 'vpa_1',
-          address: 'user@webpe',
-          displayName: 'John Doe',
-          isPrimary: true,
-          status: 'ACTIVE',
-          createdAt: '2024-01-01T00:00:00Z',
-        },
-        {
-          id: 'vpa_2',
-          address: 'john@webpe',
-          displayName: 'John Doe',
-          isPrimary: false,
-          status: 'ACTIVE',
-          createdAt: '2024-01-15T00:00:00Z',
-        },
-        {
-          id: 'vpa_3',
-          address: 'john.doe@webpe',
-          displayName: 'John Doe',
-          isPrimary: false,
-          status: 'INACTIVE',
-          createdAt: '2024-01-20T00:00:00Z',
-        },
-      ]);
+      setVpas(mappedVpas);
     } catch (err) {
       setError('Failed to load VPAs');
       console.error('Error loading VPAs:', err);
@@ -118,21 +115,15 @@ const ManageVPAPage: React.FC = () => {
 
     setSettingPrimary(true);
     try {
-      // Mock API call - replace with actual endpoint when available
-      // await fetch(`${API_BASE_URL}/vpas/${vpaToSetPrimary.id}/set-primary`, {
-      //   method: 'PATCH',
-      // });
+      const response = await apiRequest(`/vpas/${vpaToSetPrimary.id}/set-primary`, {
+        method: 'PUT',
+      });
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await parseResponse(response);
 
-      // Update local state
-      setVpas((prev) =>
-        prev.map((v) => ({
-          ...v,
-          isPrimary: v.id === vpaToSetPrimary.id,
-        }))
-      );
+      // Refresh VPAs from context
+      await refreshUserData();
+      await loadVPAs();
 
       setSuccess('Primary VPA updated successfully');
       setPrimaryDialogOpen(false);
@@ -162,15 +153,16 @@ const ManageVPAPage: React.FC = () => {
 
     setDeleting(true);
     try {
-      // Mock API call - replace with actual endpoint when available
-      // await fetch(`${API_BASE_URL}/vpas/${vpaToDelete.id}`, {
-      //   method: 'DELETE',
-      // });
+      const response = await apiRequest(`/vpas/${vpaToDelete.id}`, {
+        method: 'DELETE',
+      });
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await parseResponse(response);
 
-      setVpas((prev) => prev.filter((v) => v.id !== vpaToDelete.id));
+      // Refresh VPAs from context
+      await refreshUserData();
+      await loadVPAs();
+
       setSuccess('VPA deleted successfully');
       setDeleteDialogOpen(false);
       setVpaToDelete(null);

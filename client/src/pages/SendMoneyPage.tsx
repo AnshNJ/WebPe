@@ -15,8 +15,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import SendIcon from '@mui/icons-material/Send';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import { apiRequest, parseResponse, generateClientTransactionId } from '../utils/api.util';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FormErrors {
   recipientVpa?: string;
@@ -26,6 +26,7 @@ interface FormErrors {
 
 const SendMoneyPage: React.FC = () => {
   const navigate = useNavigate();
+  const { vpas } = useAuth();
   const [recipientVpa, setRecipientVpa] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -36,11 +37,11 @@ const SendMoneyPage: React.FC = () => {
   const [transactionId, setTransactionId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
 
-  // Mock user VPAs - replace with actual API call to get user's VPAs
-  const userVPAs = [
-    { value: 'user@webpe', label: 'user@webpe (Primary)' },
-    { value: 'john@webpe', label: 'john@webpe' },
-  ];
+  // Get user VPAs from auth context
+  const userVPAs = vpas.map((vpa) => ({
+    value: vpa.address,
+    label: `${vpa.address}${vpa.isPrimary ? ' (Primary)' : ''}`,
+  }));
 
   // VPA validation regex
   const vpaRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/;
@@ -92,31 +93,28 @@ const SendMoneyPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/transactions`, {
+      // Generate client transaction ID
+      const clientTransactionId = generateClientTransactionId();
+
+      const response = await apiRequest('/transactions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           amount: parseFloat(amount),
           payeeVpa: recipientVpa.trim(),
           payerVpa: payerVpa,
+          clientTransactionId,
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to send money');
-      }
+      const data = await parseResponse<{ transactionId: number; message: string }>(response);
 
       setSuccess(true);
-      setTransactionId(data.id);
+      setTransactionId(String(data.transactionId));
 
       // Redirect after 2 seconds
       setTimeout(() => {
-        if (data.id) {
-          navigate(`/transactions/${data.id}`);
+        if (data.transactionId) {
+          navigate(`/transactions/${data.transactionId}`);
         } else {
           navigate('/dashboard');
         }
@@ -133,7 +131,7 @@ const SendMoneyPage: React.FC = () => {
     if (userVPAs.length > 0 && !payerVpa) {
       setPayerVpa(userVPAs[0].value);
     }
-  }, []);
+  }, [userVPAs, payerVpa]);
 
   return (
     <Container sx={{ mt: 4, mb: 4, maxWidth: 600 }}>

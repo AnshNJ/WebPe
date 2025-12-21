@@ -8,5 +8,6 @@ export const config = {
   minProcessingDelayMs: parseInt(process.env.MIN_PROCESSING_DELAY_MS || '1000', 10),
   maxProcessingDelayMs: parseInt(process.env.MAX_PROCESSING_DELAY_MS || '3000', 10),
   logLevel: process.env.LOG_LEVEL || 'info',
+  pspApiUrl: process.env.PSP_API_URL || 'http://localhost:3001/api/v1',
 };
 

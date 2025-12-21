@@ -15,8 +15,8 @@ import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import SendIcon from '@mui/icons-material/Send';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import { apiRequest, parseResponse, generateClientTransactionId } from '../utils/api.util';
+import { useAuth } from '../contexts/AuthContext';
 
 interface PaymentProps {
   onSuccess?: () => void;
@@ -31,6 +31,7 @@ interface FormErrors {
 
 const Payment: React.FC<PaymentProps> = ({ onSuccess, onClose }) => {
   const navigate = useNavigate();
+  const { vpas } = useAuth();
   const [payerVpa, setPayerVpa] = useState('');
   const [payeeVpa, setPayeeVpa] = useState('');
   const [amount, setAmount] = useState('');
@@ -41,11 +42,11 @@ const Payment: React.FC<PaymentProps> = ({ onSuccess, onClose }) => {
   const [pollingAttempts, setPollingAttempts] = useState(0);
   const MAX_POLLING_ATTEMPTS = 30; // 1 minute max (30 * 2 seconds)
 
-  // Mock user VPAs - replace with actual API call
-  const userVPAs = [
-    { value: 'user@webpe', label: 'user@webpe (Primary)' },
-    { value: 'john@webpe', label: 'john@webpe' },
-  ];
+  // Get user VPAs from auth context
+  const userVPAs = vpas.map((vpa) => ({
+    value: vpa.address,
+    label: `${vpa.address}${vpa.isPrimary ? ' (Primary)' : ''}`,
+  }));
 
   // VPA validation regex
   const vpaRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$/;
@@ -64,13 +65,9 @@ const Payment: React.FC<PaymentProps> = ({ onSuccess, onClose }) => {
     if (transactionId && paymentStatus === 'PENDING' && pollingAttempts < MAX_POLLING_ATTEMPTS) {
       interval = setInterval(async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/transactions/${transactionId}/status`);
+          const response = await apiRequest(`/transactions/${transactionId}/status`);
+          const data = await parseResponse<{ status: string; message: string }>(response);
           
-          if (!response.ok) {
-            throw new Error('Failed to fetch transaction status');
-          }
-
-          const data = await response.json();
           setPollingAttempts((prev) => prev + 1);
 
           if (data.status === 'SUCCESS' || data.status === 'FAILED') {
@@ -158,26 +155,23 @@ const Payment: React.FC<PaymentProps> = ({ onSuccess, onClose }) => {
     setPollingAttempts(0);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/transactions`, {
+      // Generate client transaction ID
+      const clientTransactionId = generateClientTransactionId();
+
+      const response = await apiRequest('/transactions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           amount: parseFloat(amount),
           payeeVpa: payeeVpa.trim(),
           payerVpa: payerVpa.trim(),
+          clientTransactionId,
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to initiate payment');
-      }
+      const data = await parseResponse<{ transactionId: number; message: string }>(response);
 
       setPaymentStatus('PENDING');
-      setTransactionId(data.id);
+      setTransactionId(String(data.transactionId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred while initiating payment');
       setPaymentStatus('FAILED');

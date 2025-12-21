@@ -1,26 +1,80 @@
-import React from 'react';
-import { Container, Typography, Box, Card, CardContent, Button, Chip } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Container, Typography, Box, Card, CardContent, Button, Chip, CircularProgress, Alert } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { apiRequest, parseResponse } from '../utils/api.util';
+import { useAuth } from '../contexts/AuthContext';
 
 const TransactionDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { vpas } = useAuth();
+  const [transaction, setTransaction] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Mock transaction data - replace with API call
-  const transaction = {
-    id: id,
-    amount: -100,
-    to: 'example@upi',
-    from: 'user@webpe',
-    date: '2024-01-15',
-    status: 'SUCCESS',
-    type: 'PAYMENT',
+  useEffect(() => {
+    if (id) {
+      loadTransactionDetails();
+    }
+  }, [id]);
+
+  const loadTransactionDetails = async () => {
+    try {
+      setLoading(true);
+      const response = await apiRequest(`/transactions/${id}`);
+      const data = await parseResponse<{ transaction: any }>(response);
+
+      const userVpaList = vpas.map((v: any) => v.address);
+      const isPayer = userVpaList.includes(data.transaction.payerVpa);
+      const amountValue = parseFloat(data.transaction.amount.toString());
+
+      setTransaction({
+        id: data.transaction.id,
+        amount: isPayer ? -amountValue : amountValue,
+        to: data.transaction.payeeVpa,
+        from: data.transaction.payerVpa,
+        date: new Date(data.transaction.createdAt).toISOString().split('T')[0],
+        status: data.transaction.status,
+        type: 'PAYMENT',
+        clientTransactionId: data.transaction.clientTransactionId,
+        createdAt: data.transaction.createdAt,
+        updatedAt: data.transaction.updatedAt,
+      });
+    } catch (err) {
+      setError('Failed to load transaction details');
+      console.error('Error loading transaction:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
-    return status === 'SUCCESS' ? 'success' : 'error';
+    return status === 'SUCCESS' ? 'success' : status === 'FAILED' ? 'error' : 'warning';
   };
+
+  if (loading) {
+    return (
+      <Container sx={{ mt: 4, mb: 4, display: 'flex', justifyContent: 'center' }}>
+        <CircularProgress />
+      </Container>
+    );
+  }
+
+  if (error || !transaction) {
+    return (
+      <Container sx={{ mt: 4, mb: 4 }}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/transactions')}
+          sx={{ mb: 3 }}
+        >
+          Back to Transactions
+        </Button>
+        <Alert severity="error">{error || 'Transaction not found'}</Alert>
+      </Container>
+    );
+  }
 
   return (
     <Container sx={{ mt: 4, mb: 4 }}>

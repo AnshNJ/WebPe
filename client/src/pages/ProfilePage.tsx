@@ -31,8 +31,8 @@ import AddIcon from '@mui/icons-material/Add';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import { apiRequest, parseResponse } from '../utils/api.util';
+import { useAuth } from '../contexts/AuthContext';
 
 interface VPA {
   id: string;
@@ -51,6 +51,7 @@ interface UserInfo {
 
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
+  const { balance: contextBalance, vpas: contextVpas, user: contextUser, refreshUserData } = useAuth();
   const [balance, setBalance] = useState<number>(0);
   const [vpas, setVpas] = useState<VPA[]>([]);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -65,44 +66,74 @@ const ProfilePage: React.FC = () => {
     loadProfileData();
   }, []);
 
+  // Sync with context data
+  useEffect(() => {
+    if (contextBalance !== undefined) {
+      const balanceValue = typeof contextBalance === 'object' && contextBalance !== null
+        ? parseFloat(String(contextBalance))
+        : typeof contextBalance === 'number' ? contextBalance : parseFloat(String(contextBalance));
+      setBalance(balanceValue);
+    }
+    if (contextVpas.length > 0) {
+      const mappedVpas: VPA[] = contextVpas.map((vpa) => ({
+        id: String(vpa.id),
+        address: vpa.address,
+        displayName: vpa.displayName,
+        isPrimary: vpa.isPrimary,
+        createdAt: vpa.createdAt,
+      }));
+      setVpas(mappedVpas);
+    }
+    if (contextUser) {
+      setUserInfo({
+        name: contextUser.name,
+        email: contextUser.email,
+        phone: contextUser.phone,
+        accountCreated: contextUser.accountCreated,
+      });
+    }
+  }, [contextBalance, contextVpas, contextUser]);
+
   const loadProfileData = async () => {
     setLoading(true);
     try {
-      // Mock API calls - replace with actual endpoints when available
-      // const [balanceRes, vpasRes, userRes, transactionsRes] = await Promise.all([
-      //   fetch(`${API_BASE_URL}/user/balance`),
-      //   fetch(`${API_BASE_URL}/user/vpas`),
-      //   fetch(`${API_BASE_URL}/user/profile`),
-      //   fetch(`${API_BASE_URL}/transactions/count`),
-      // ]);
-
-      // Mock data
-      await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate API delay
-
-      setBalance(12500.50);
-      setVpas([
-        {
-          id: 'vpa_1',
-          address: 'user@webpe',
-          displayName: 'John Doe',
-          isPrimary: true,
-          createdAt: '2024-01-01T00:00:00Z',
-        },
-        {
-          id: 'vpa_2',
-          address: 'john@webpe',
-          displayName: 'John Doe',
-          isPrimary: false,
-          createdAt: '2024-01-15T00:00:00Z',
-        },
+      const [balanceRes, vpasRes, userRes, transactionsRes] = await Promise.all([
+        apiRequest('/users/balance'),
+        apiRequest('/vpas'),
+        apiRequest('/users/profile'),
+        apiRequest('/transactions/count?status=SUCCESS'),
       ]);
+
+      const [balanceData, vpasData, userData, transactionsData] = await Promise.all([
+        parseResponse<{ balance: any }>(balanceRes),
+        parseResponse<{ vpas: any[] }>(vpasRes),
+        parseResponse<{ user: any }>(userRes),
+        parseResponse<{ count: number }>(transactionsRes),
+      ]);
+
+      // Map balance
+      const balanceValue = typeof balanceData.balance === 'object' && balanceData.balance !== null
+        ? parseFloat(String(balanceData.balance))
+        : parseFloat(String(balanceData.balance));
+      setBalance(balanceValue);
+
+      // Map VPAs
+      const mappedVpas: VPA[] = vpasData.vpas.map((vpa: any) => ({
+        id: String(vpa.id),
+        address: vpa.vpa,
+        displayName: userData.user.username,
+        isPrimary: vpa.isPrimary,
+        createdAt: vpa.createdAt,
+      }));
+      setVpas(mappedVpas);
+
+      // Map user info
       setUserInfo({
-        name: 'John Doe',
-        email: 'john.doe@example.com',
-        phone: '+91 98765 43210',
-        accountCreated: '2024-01-01T00:00:00Z',
+        name: userData.user.username,
+        email: userData.user.email,
+        accountCreated: userData.user.createdAt,
       });
-      setTotalTransactions(47);
+      setTotalTransactions(transactionsData.count);
     } catch (err) {
       setError('Failed to load profile data');
       console.error('Error loading profile:', err);
@@ -125,15 +156,16 @@ const ProfilePage: React.FC = () => {
 
     setDeleting(true);
     try {
-      // Mock API call - replace with actual endpoint when available
-      // await fetch(`${API_BASE_URL}/vpas/${vpaToDelete.id}`, {
-      //   method: 'DELETE',
-      // });
+      const response = await apiRequest(`/vpas/${vpaToDelete.id}`, {
+        method: 'DELETE',
+      });
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await parseResponse(response);
 
-      setVpas((prev) => prev.filter((v) => v.id !== vpaToDelete.id));
+      // Refresh data
+      await refreshUserData();
+      await loadProfileData();
+
       setDeleteDialogOpen(false);
       setVpaToDelete(null);
     } catch (err) {
