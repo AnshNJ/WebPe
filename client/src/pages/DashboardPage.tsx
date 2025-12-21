@@ -16,7 +16,6 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import PaymentDialog from '../components/PaymentDialog';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -26,7 +25,6 @@ import { apiRequest, parseResponse } from '../utils/api.util';
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { balance, vpas } = useAuth();
-  const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
   const [totalTransactions, setTotalTransactions] = useState<number>(0);
   const [successCount, setSuccessCount] = useState<number>(0);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
@@ -79,14 +77,6 @@ const DashboardPage: React.FC = () => {
   const successRate = totalTransactions > 0 
     ? ((successCount / totalTransactions) * 100).toFixed(1)
     : '0.0';
-
-  const handleOpenPaymentDialog = () => {
-    setOpenPaymentDialog(true);
-  };
-
-  const handleClosePaymentDialog = () => {
-    setOpenPaymentDialog(false);
-  };
 
   const handleTransactionClick = (transactionId: number) => {
     navigate(`/transactions/${transactionId}`);
@@ -187,13 +177,6 @@ const DashboardPage: React.FC = () => {
                 <Typography variant="h5" component="div" sx={{ mb: 2 }}>
                   Quick Actions
                 </Typography>
-                <Button
-                  variant="contained"
-                  sx={{ mr: 2, mb: 1 }}
-                  onClick={handleOpenPaymentDialog}
-                >
-                  Pay by UPI
-                </Button>
                 <Button
                   variant="outlined"
                   sx={{ mr: 2, mb: 1 }}
@@ -299,10 +282,6 @@ const DashboardPage: React.FC = () => {
           </Grid>
         </Grid>
       </Container>
-      <PaymentDialog
-        open={openPaymentDialog}
-        onClose={handleClosePaymentDialog}
-      />
     </Box>
   );
 };
