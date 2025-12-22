@@ -1,33 +1,32 @@
-import { PrismaClient } from '../src/generated/prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-console.log("here");
+
 async function main() {
-  console.log(`Start seeding ...`);
-
-  // Delete all existing roles to ensure a clean slate on each seed run
-  await prisma.role.deleteMany();
-
-  // Create the 'user' and 'admin' roles
-  const rolesData = [
-    { name: 'user' },
-    { name: 'admin' },
-  ];
-
-  await prisma.role.createMany({
-    data: rolesData,
-    skipDuplicates: true, // This is an optional flag to prevent errors if you accidentally run it without deleting first
+  // Create default roles
+  const userRole = await prisma.role.upsert({
+    where: { name: 'USER' },
+    update: {},
+    create: {
+      name: 'USER',
+    },
   });
 
-  console.log(`Seeding finished.`);
+  const adminRole = await prisma.role.upsert({
+    where: { name: 'ADMIN' },
+    update: {},
+    create: {
+      name: 'ADMIN',
+    },
+  });
+
+  console.log('Seeded roles:', { userRole, adminRole });
 }
 
 main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
+  .catch((e) => {
     console.error(e);
+  })
+  .finally(async () => {
     await prisma.$disconnect();
-    process.exit(1);
   });

@@ -1,12 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -14,55 +10,73 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id BigInt @id @default(autoincrement())
-  username String @unique
-  email String @unique
-  passwordHash String
-  vpa String @unique
-  roleId BigInt
-  role Role @relation(fields: [roleId], references: [id])
-  wallet Wallet?
-  paymentMethod paymentMethod[]
-  transactionFrom Transaction[] @relation("TransactionFrom")
-  transactionTo Transaction[] @relation("TransactionTo")
-  createAt DateTime @default(now())
+model Role {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model Role {
-  id BigInt @id @default(autoincrement())
-  name String
-  users User[]
+model User {
+  id           Int           @id @default(autoincrement())
+  username     String
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  vpa          String?
+  roleId       Int
+  role         Role          @relation(fields: [roleId], references: [id])
+  wallet       Wallet?
+  vpas         Vpa[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("users")
+}
+
+model Vpa {
+  id        Int      @id @default(autoincrement())
+  vpa       String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("vpas")
 }
 
 model Wallet {
-  id BigInt @id @default(autoincrement())
-  userId BigInt @unique
-  users User @relation(fields: [userId], references: [id])
-  balance Float @default(0)
-  currency String @default("INR")
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Decimal  @default(0) @db.Decimal(10, 2)
+  lockedBalance Decimal @default(0) @db.Decimal(10, 2) @map("locked_balance")
+  currency     String   @default("INR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("wallets")
 }
 
 model Transaction {
-  id BigInt @id @default(autoincrement())
-  fromUserId BigInt
-  toUserId BigInt
-  fromUser User @relation("TransactionFrom", fields: [fromUserId], references: [id])
-  toUser User @relation("TransactionTo", fields: [toUserId], references: [id])
-  amount Float
-  status String
-  type String
-  message String?
-  createdAt DateTime @default(now())
+  id                  Int               @id @default(autoincrement())
+  clientTransactionId String  @unique
+  amount              Decimal           @db.Decimal(10, 2)
+  payerVpa            String            @map("payer_vpa")
+  payeeVpa            String            @map("payee_vpa")
+  status              TransactionStatus @default(PENDING)
+  userId              Int?
+  user                User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  @@map("transactions")
 }
 
-model paymentMethod {
-  id BigInt @id @default(autoincrement())
-  userId BigInt
-  user User @relation(fields: [userId], references: [id])
-  type String
-  details String?
-  alias String?
-  createdAt DateTime @default(now())  
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }

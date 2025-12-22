@@ -1,36 +1,35 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import { Pool } from "pg";
+import './types/express'; // Load type definitions
+import express, { Express, Request, Response } from 'express';
+import cors from 'cors';
+import transactionRouter from './routes/transaction.route';
+import authRouter from './routes/auth.route';
+import userRouter from './routes/user.route';
+import errorHandlerMiddleware from './middleware/error-handler.middleware';
+import requestLogger from './middleware/request-logger.middleware';
+import vpaRouter from './routes/vpa.route';
+import logger from './utils/logger.util';
 
-dotenv.config();
+const app: Express = express();
+const port = process.env.PORT || 3001;
 
-const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 
-
-//Router
-import authRouter from './routes/authRoute';
-import paymentRouter from './routes/paymentRoute';
-
-
-//Routes
 app.use('/api/v1/auth', authRouter);
-app.use('/api/v1/payments', paymentRouter);
+app.use('/api/v1/transactions', transactionRouter);
+app.use('/api/v1/users', userRouter);
+app.use('/api/v1/vpas', vpaRouter);
 
-//DB Connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-})
 
-app.get("/", async(req, res) => {
-    const result = await pool.query("SELECT NOW()");
-    res.json({
-        "message": "API is now running",
-        "time": result.rows[0]
-    });
+app.get('/', (req: Request, res: Response) => {
+  res.send('PSP Server is running');
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server now running on port ${PORT}`));
+// Error handler must be last middleware
+app.use(errorHandlerMiddleware);
+const server = app.listen(port, () => {
+  logger.info(`Server is running at http://localhost:${port}`);
+});
+
+export default server;
